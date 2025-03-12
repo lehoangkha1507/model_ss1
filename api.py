@@ -17,6 +17,15 @@ logging.basicConfig(level=logging.INFO)
 
 # ====== Khởi tạo FastAPI ======
 app = FastAPI()
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Cho phép mọi nguồn gọi API
+    allow_credentials=True,
+    allow_methods=["*"],  # Cho phép tất cả phương thức (GET, POST,...)
+    allow_headers=["*"],  # Cho phép tất cả headers
+)
 
 # ====== Tải lại mô hình và scaler ======
 def load_model_and_scaler():
