@@ -61,16 +61,14 @@ async def predict(data: InputData):
     logging.info(f"📩 Nhận dữ liệu đầu vào: {data.features}")
 
     try:
-        # Kiểm tra nếu model hoặc scaler không tải được
         if model is None or scaler is None:
             return JSONResponse(content={"error": "Mô hình hoặc scaler chưa được tải thành công."}, status_code=500)
 
-        # Kiểm tra dữ liệu đầu vào
         if not isinstance(data.features, list) or len(data.features) != 7:
             return JSONResponse(content={"error": "Dữ liệu đầu vào không hợp lệ. Cần đúng 7 giá trị!"}, status_code=400)
 
         # Chuyển dữ liệu thành numpy array
-        input_data = np.array(data.features).reshape(1, -1)
+        input_data = np.array(data.features, dtype=np.float32).reshape(1, -1)
         columns = ['c', 'l', 'gamma', 'h', 'u', 'phi', 'beta']
         input_data_df = pd.DataFrame(input_data, columns=columns)
 
@@ -82,7 +80,7 @@ async def predict(data: InputData):
 
         # Dự đoán hệ số an toàn
         try:
-            predicted_fs = model.predict(input_data_scaled)[0][0]
+            predicted_fs = float(model.predict(input_data_scaled)[0][0])  # Ép kiểu về float
         except Exception as e:
             return JSONResponse(content={"error": f"Lỗi khi dự đoán hệ số an toàn: {str(e)}"}, status_code=500)
 
