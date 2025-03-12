@@ -2,11 +2,18 @@ import numpy as np
 import pandas as pd
 import joblib
 from tensorflow import keras
+from fastapi import FastAPI
+from pydantic import BaseModel
+import os
+import uvicorn
+
+# ====== Khởi tạo FastAPI ======
+app = FastAPI()
 
 # ====== Tải lại mô hình và scaler ======
 def load_model_and_scaler():
     try:
-        model = keras.models.load_model('model_land.h5', compile=False)
+        model = keras.models.load_model('fs_model.h5', compile=False)
         model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mae'])
         print("✅ Mô hình đã tải thành công!")
     except Exception as e:
@@ -22,22 +29,12 @@ def load_model_and_scaler():
 
     return model, scaler
 
-# ====== Hàm nhập dữ liệu từ bàn phím ======
-def get_user_input():
-    """ Nhập dữ liệu địa chất và trả về numpy array """
-    try:
-        c = float(input("Nhập lực dính đơn vị của đất (c) [kN/m²]: "))
-        L = float(input("Nhập chiều dài mặt trượt (L) [m]: "))
-        gamma = float(input("Nhập trọng lượng riêng của đất (gamma) [kN/m³]: "))
-        h = float(input("Nhập chiều cao khối đất trượt (h) [m]: "))
-        u = float(input("Nhập áp lực nước lỗ rỗng (u) [kN/m²]: "))
-        phi = float(input("Nhập góc ma sát trong hiệu quả (phi) [°]: "))
-        beta = float(input("Nhập góc dốc của mặt trượt (beta) [°]: "))
+# Tải mô hình và scaler khi khởi động API
+model, scaler = load_model_and_scaler()
 
-        return np.array([[c, L, gamma, h, u, phi, beta]])
-    except ValueError:
-        print("❌ Lỗi: Vui lòng nhập số hợp lệ!")
-        return get_user_input()  # Yêu cầu nhập lại nếu có lỗi
+# ====== Định nghĩa kiểu dữ liệu đầu vào ======
+class InputData(BaseModel):
+    features: list
 
 # ====== Chuyển đổi FS thành nhãn ======
 def classify_fs(fs_value):
@@ -49,25 +46,38 @@ def classify_fs(fs_value):
     else:
         return "❌ Nguy hiểm"
 
-# ====== Chương trình chính ======
+# ====== API Endpoint để dự đoán ======
+@app.post("/predict")
+async def predict(data: InputData):
+    """ API nhận dữ liệu, chuẩn hóa và trả về hệ số an toàn FS """
+    try:
+        # Chuyển dữ liệu thành numpy array
+        input_data = np.array(data.features).reshape(1, -1)
+
+        # Tạo DataFrame để giữ nguyên cột khi scale
+        columns = ['c', 'l', 'gamma', 'h', 'u', 'phi', 'beta']
+        input_data_df = pd.DataFrame(input_data, columns=columns)
+
+        # Chuẩn hóa dữ liệu với scaler đã lưu
+        input_data_scaled = scaler.transform(input_data_df)
+
+        # Dự đoán hệ số an toàn
+        predicted_fs = model.predict(input_data_scaled)[0][0]
+
+        # Chuyển đổi FS thành nhãn
+        fs_label = classify_fs(predicted_fs)
+
+        return {"FS": round(predicted_fs, 3), "Conclusion": fs_label}
+
+    except Exception as e:
+        return {"error": str(e)}
+
+# ====== Endpoint kiểm tra API đang chạy ======
+@app.get("/")
+def home():
+    return {"message": "API FS Model is running!"}
+
+# ====== Chạy API trên cổng Render ======
 if __name__ == "__main__":
-    # Tải mô hình và scaler
-    model, scaler = load_model_and_scaler()
-
-    # Nhập dữ liệu từ bàn phím
-    user_data = get_user_input()
-
-    # Chuẩn hóa dữ liệu
-    columns = ['c', 'l', 'gamma', 'h', 'u', 'phi', 'beta']
-    user_data_df = pd.DataFrame(user_data, columns=columns)
-    user_data_scaled = scaler.transform(user_data_df)  # CHỈ transform, không fit lại!
-
-    # Dự đoán hệ số an toàn
-    predicted_fs = model.predict(user_data_scaled)[0][0]  # Lấy giá trị duy nhất
-
-    # Chuyển đổi FS thành nhãn
-    fs_label = classify_fs(predicted_fs)
-
-    # Hiển thị kết quả
-    print(f"🔮 Hệ số an toàn dự đoán (FS): {predicted_fs:.3f}")
-    print(f"🛑 Kết luận: {fs_label}")
+    port = int(os.environ.get("PORT", 8000))  # Render yêu cầu lấy cổng từ biến môi trường
+    uvicorn.run(app, host="0.0.0.0", port=port)
