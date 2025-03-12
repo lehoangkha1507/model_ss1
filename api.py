@@ -7,13 +7,16 @@ from pydantic import BaseModel
 import os
 import uvicorn
 
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # Chạy TensorFlow trên CPU
+
 # ====== Khởi tạo FastAPI ======
 app = FastAPI()
 
 # ====== Tải lại mô hình và scaler ======
 def load_model_and_scaler():
     try:
-        model = keras.models.load_model('fs_model.h5', compile=False)
+        model = keras.models.load_model('model_land.h5', compile=False)
         model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mae'])
         print("✅ Mô hình đã tải thành công!")
     except Exception as e:
