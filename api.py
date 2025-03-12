@@ -7,8 +7,8 @@ from pydantic import BaseModel
 import os
 import uvicorn
 
-import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # Chạy TensorFlow trên CPU
+# ====== Chạy TensorFlow trên CPU ======
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 # ====== Khởi tạo FastAPI ======
 app = FastAPI()
@@ -21,14 +21,14 @@ def load_model_and_scaler():
         print("✅ Mô hình đã tải thành công!")
     except Exception as e:
         print(f"❌ Lỗi khi tải mô hình: {e}")
-        exit()
+        return None, None
 
     try:
         scaler = joblib.load('scaler.pkl')  # Load scaler đã lưu
         print("✅ Scaler đã tải thành công!")
     except FileNotFoundError:
         print("❌ Không tìm thấy scaler.pkl! Hãy chắc chắn rằng bạn đã lưu scaler khi training.")
-        exit()
+        return None, None
 
     return model, scaler
 
@@ -54,18 +54,32 @@ def classify_fs(fs_value):
 async def predict(data: InputData):
     """ API nhận dữ liệu, chuẩn hóa và trả về hệ số an toàn FS """
     try:
+        # Kiểm tra nếu model hoặc scaler không tải được
+        if model is None or scaler is None:
+            return {"error": "Mô hình hoặc scaler chưa được tải thành công."}
+
+        # Kiểm tra dữ liệu đầu vào
+        if not isinstance(data.features, list) or len(data.features) != 7:
+            return {"error": "Dữ liệu đầu vào không hợp lệ. Cần đúng 7 giá trị!"}
+
         # Chuyển dữ liệu thành numpy array
         input_data = np.array(data.features).reshape(1, -1)
 
-        # Tạo DataFrame để giữ nguyên cột khi scale
+        # Định nghĩa tên cột để giữ nguyên định dạng khi scale
         columns = ['c', 'l', 'gamma', 'h', 'u', 'phi', 'beta']
         input_data_df = pd.DataFrame(input_data, columns=columns)
 
         # Chuẩn hóa dữ liệu với scaler đã lưu
-        input_data_scaled = scaler.transform(input_data_df)
+        try:
+            input_data_scaled = scaler.transform(input_data_df)
+        except Exception as e:
+            return {"error": f"Lỗi khi chuẩn hóa dữ liệu: {str(e)}"}
 
         # Dự đoán hệ số an toàn
-        predicted_fs = model.predict(input_data_scaled)[0][0]
+        try:
+            predicted_fs = model.predict(input_data_scaled)[0][0]
+        except Exception as e:
+            return {"error": f"Lỗi khi dự đoán hệ số an toàn: {str(e)}"}
 
         # Chuyển đổi FS thành nhãn
         fs_label = classify_fs(predicted_fs)
@@ -73,7 +87,7 @@ async def predict(data: InputData):
         return {"FS": round(predicted_fs, 3), "Conclusion": fs_label}
 
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"Lỗi không xác định: {str(e)}"}
 
 # ====== Endpoint kiểm tra API đang chạy ======
 @app.get("/")
