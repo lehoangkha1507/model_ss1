@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 gunicorn
-tensorflow
+tensorflow-cpu
 numpy
 joblib
 pandas
